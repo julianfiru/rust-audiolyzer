@@ -1,58 +1,142 @@
-# Audiolyzer Pro
+# Audiolyzer Pro: Real-Time Audio Spectrum Analyzer & Oscilloscope
 
-A high-performance, real-time audio spectrum analyzer and oscilloscope for the terminal, written entirely in Rust. This application utilizes a Terminal User Interface (TUI) to visualize system audio output with extreme precision and minimal overhead.
+[![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)]()
 
-## Features
+Audiolyzer Pro is a high-performance, low-latency audio visualization engine and interactive terminal application implemented in Rust. Designed for systems programmers, audio engineers, and power users, it captures live system output audio in real-time, performs Discrete Fourier Transforms (DFT), and renders frequency spectrums, oscilloscopes, and VU meters inside the terminal at a constant 60 Frames Per Second (FPS).
 
-- **Real-Time Spectrum Analysis**: Visualizes frequency domain data using Fast Fourier Transform (FFT) across ISO standard frequency bands (20Hz to 20kHz).
-- **Sub-Cell Precision Rendering**: Employs 8-level sub-cell vertical resolution to render spectrum bars smoothly within the terminal constraints.
-- **Time-Domain Oscilloscope**: Displays raw PCM audio signal waveforms in real-time.
-- **Stereo VU Meter**: Accurate dual-channel (Left/Right) RMS and Peak level metering with clipping detection.
-- **Lock-Free Concurrency**: Uses Single-Producer Single-Consumer (SPSC) ring buffers to decouple the high-frequency audio capture thread from the UI rendering loop, guaranteeing zero audio dropouts.
-- **Zero-Allocation Hot Loop**: DSP calculations (Windowing, FFT, Binning, Ballistics) operate on pre-allocated buffers, ensuring strict 60 FPS rendering without garbage collection pauses or heap allocations.
-- **Dynamic Configuration**: Switch between Hann, Hamming, and Rectangular windowing functions, or toggle between Logarithmic and Linear frequency scales on the fly.
+---
 
-## Technical Architecture
+## Technical Highlights & Architecture
 
-- **Audio Capture**: Utilizes `cpal` for cross-platform audio I/O. On Windows, it leverages WASAPI Loopback to capture internal desktop audio directly from the sound card.
-- **DSP Engine**: Powered by `rustfft` for highly optimized Fourier transformations. Includes custom implementations for exponential decay ballistics and peak falloff dynamics.
-- **TUI Renderer**: Built with `ratatui` and `crossterm` for a responsive, interactive terminal interface that supports resizing and theme switching.
+The application is engineered around strict memory safety, real-time performance, and zero heap allocations within the execution hot loop.
 
-## Installation
+```
++------------------+         Lock-Free RingBuffer        +------------------------+
+|  CPAL Audio Host |  ---------------------------------> |   Audio SPSC Buffer    |
+| (WASAPI Loopback)|   (Producer Thread: Float32 PCM)    +------------------------+
++------------------+                                                 |
+                                                                     v
++------------------+         Sub-Cell Renderer           +------------------------+
+| Crossterm / TUI  | <---------------------------------- |   DSP Processing Pipe  |
+|  Terminal Screen |      (Render Loop: 60 FPS)          | (Hann -> FFT -> Bins)  |
++------------------+                                     +------------------------+
+```
 
-Ensure you have the Rust toolchain installed (version 1.70 or higher is recommended).
+### Core Architecture Principles
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/audiolyzer.git
-   cd audiolyzer
-   ```
+1. **Lock-Free Multithreaded Decoupling**: Audio capture runs on a dedicated high-priority OS callback thread. Real-time audio samples are pushed into a Single-Producer Single-Consumer (SPSC) ring buffer, completely isolating audio capture latency from the TUI rendering engine.
+2. **Zero-Allocation Hot Loop**: All processing buffers (time-domain samples, complex FFT structures, logarithmic bin arrays, and ballistic decay states) are pre-allocated during initial startup. No dynamic memory allocation (`malloc`/`realloc`) occurs during active processing loops.
+3. **Sub-Cell Vertical Resolution**: Utilizes block Unicode characters (` ▂▃▄▅▆▇█`) to achieve an 8x vertical rendering resolution beyond standard character grid limits.
 
-2. Build and run the application:
-   ```bash
-   cargo run --release
-   ```
+---
 
-## Controls and Keybindings
+## Digital Signal Processing (DSP) Pipeline
 
-The application provides an interactive dashboard with the following controls:
+### 1. Windowing Function (Spectral Leakage Suppression)
+To reduce spectral leakage caused by finite-length time domain truncations, raw PCM samples $x[n]$ are multiplied by a windowing function prior to FFT conversion. The default window is the Hann Window:
 
-- `1` : Switch to Spectrum Analyzer Mode
-- `2` : Switch to Waveform Oscilloscope Mode
-- `3` : Switch to Stereo VU Meter Mode
-- `Tab` : Cycle through color themes (Cyberpunk, Matrix, Fire, Studio Dark)
-- `W` : Toggle Windowing Function (Hann / Rectangular / Hamming)
-- `S` : Toggle Frequency Scale (Logarithmic / Linear)
-- `Up` / `Down` : Adjust gain sensitivity (+3dB / -3dB)
-- `Space` : Freeze/Pause the visualizer
-- `H` : Open the Help Modal
-- `Q` or `Esc` : Quit the application safely
+$$w[n] = 0.5 \left( 1 - \cos\left(\frac{2\pi n}{N-1}\right) \right), \quad 0 \le n < N$$
+
+Supported selectable window functions include Hann, Hamming, and Rectangular (no window).
+
+### 2. Fast Fourier Transform (FFT)
+The windowed discrete-time sequence is transformed into the frequency domain using the Cooley-Tukey FFT algorithm:
+
+$$X[k] = \sum_{n=0}^{N-1} x[n] w[n] \, e^{-i \frac{2\pi}{N} k n}, \quad 0 \le k < N$$
+
+Where $N = 2048$ sample points, giving a fine frequency resolution of $\Delta f = \frac{f_s}{N} \approx 23.4 \text{ Hz}$ at standard $48 \text{ kHz}$ sampling rates.
+
+### 3. Logarithmic Frequency Binning & dBFS Scale Conversion
+Human perception of sound frequency is logarithmic. Linear FFT frequency bins are mapped into $K = 48$ logarithmic frequency bands spanning from $20\text{ Hz}$ to $20\text{ kHz}$:
+
+$$f_k = f_{\text{min}} \cdot \left( \frac{f_{\text{max}}}{f_{\text{min}}} \right)^{\frac{k}{K}}$$
+
+Magnitudes $|X[k]|$ are normalized and converted to Decibels relative to Full Scale (dBFS):
+
+$$\text{dBFS} = 20 \cdot \log_{10} \left( \frac{|X[k]|}{N} + \epsilon \right) + G$$
+
+Where $G$ represents user-configured gain offset (dB). The resulting values are normalized within $[-60\text{ dBFS}, 0\text{ dBFS}]$ and clamped to $[0.0, 1.0]$.
+
+### 4. Dynamic Ballistics (Smoothing and Peak Falloff)
+Bar levels are smoothed using an exponential decay envelope, while peak indicators drop at a linear rate:
+
+$$y_{\text{bar}}[t] = \max(y_{\text{target}}, \, y_{\text{bar}}[t-1] \cdot \alpha_{\text{decay}})$$
+
+$$y_{\text{peak}}[t] = \max(y_{\text{bar}}[t], \, y_{\text{peak}}[t-1] - \beta_{\text{falloff}})$$
+
+---
+
+## Technology Stack & Technology Citations
+
+This application builds upon industry-standard Rust libraries:
+
+- **[`cpal`](https://crates.io/crates/cpal)**: Cross-Platform Audio Library. Provides low-level audio device enumeration and host stream management. Configured for WASAPI Loopback capture on Windows to record desktop system output audio natively.
+- **[`rustfft`](https://crates.io/crates/rustfft)**: High-performance, SIMD-accelerated Fast Fourier Transform library written in pure Rust.
+- **[`ringbuf`](https://crates.io/crates/ringbuf)**: Lock-free Single-Producer Single-Consumer (SPSC) queue providing thread-safe buffer sharing without mutex contention.
+- **[`ratatui`](https://crates.io/crates/ratatui)**: Modern Rust terminal user interface framework for building rich layout blocks and widgets.
+- **[`crossterm`](https://crates.io/crates/crossterm)**: Cross-platform terminal manipulation library handling raw mode execution, terminal resizing, and non-blocking input events.
+- **[`anyhow`](https://crates.io/crates/anyhow)**: Flexible error handling abstraction for contextual error reporting.
+
+---
+
+## Visualization Modes
+
+1. **Spectrum Analyzer**: Displays 48 ISO logarithmic frequency bands with sub-cell precision and peak cap markers.
+2. **Time-Domain Oscilloscope**: Visualizes continuous raw PCM audio waveforms centered on a zero-crossing reference line.
+3. **Stereo Master VU Meter**: Features dual-channel (Left/Right) RMS and Peak level meters, precise dBFS scale markers, and visual clipping detection indicators.
+
+---
+
+## Keybindings and Controls
+
+| Key / Control | Function Description |
+| :--- | :--- |
+| `1` | Switch view to Spectrum Analyzer Mode |
+| `2` | Switch view to Time-Domain Oscilloscope Mode |
+| `3` | Switch view to Stereo VU Meter Mode |
+| `Tab` | Cycle color themes (Cyberpunk, Matrix, Fire, Studio Dark) |
+| `W` | Toggle window function (Hann -> Rectangular -> Hamming) |
+| `S` | Toggle frequency scale mode (Logarithmic vs Linear) |
+| `Up Arrow` | Increase audio input gain sensitivity (+3.0 dB) |
+| `Down Arrow` | Decrease audio input gain sensitivity (-3.0 dB) |
+| `Space` | Freeze / Pause visualizer rendering |
+| `H` / `?` | Toggle Help & Keybindings overlay modal |
+| `Ctrl + C` / `Q` / `Esc` | Gracefully quit application and restore terminal state |
+
+---
+
+## Build and Installation Guide
+
+### Prerequisites
+
+- **Rust Toolchain**: Install via [rustup.rs](https://rustup.rs/) (edition 2021, Rust 1.70+ recommended).
+- **Windows / Linux / macOS Audio Setup**: On Windows, WASAPI loopback works out of the box for default output devices.
+
+### Compilation
+
+```bash
+# Clone the repository
+git clone https://github.com/julianfiru/rust-audiolyzer.git
+cd rust-audiolyzer
+
+# Compile optimized release binary
+cargo build --release
+
+# Run application
+cargo run --release
+```
+
+---
 
 ## Troubleshooting
 
-- **No audio detected (Zero bars)**: Ensure that you have active audio playing on your system (e.g., music, video). 
-- **Windows Microphone Privacy**: Windows may block terminal applications from accessing the audio loopback device. Go to Settings -> Privacy & Security -> Microphone and ensure "Let desktop apps access your microphone" is enabled.
+- **No audio signal (Flat spectrum)**: Ensure system audio is actively playing. Verify that Windows Privacy settings allow desktop applications to access audio endpoints (Settings -> Privacy & Security -> Microphone -> Enable "Let desktop apps access your microphone").
+- **Terminal artifacting**: Ensure your terminal emulator supports ANSI escape sequences and UTF-8 encoding (e.g., Windows Terminal, Alacritty, Kitty, WezTerm, or VS Code Terminal).
+
+---
 
 ## License
 
-This project is licensed under the MIT License. See the LICENSE file for details.
+Distributed under the MIT License. See `LICENSE` for details.
