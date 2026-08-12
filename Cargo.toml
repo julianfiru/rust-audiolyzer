@@ -1,0 +1,16 @@
+[package]
+name = "audio-analyzer"
+version = "0.1.0"
+edition = "2021"
+authors = ["Julian"]
+description = "Production-grade Real-Time Audio Spectrum Analyzer & TUI Visualizer in Rust"
+
+[dependencies]
+cpal = "0.15"
+ringbuf = "0.3"
+rustfft = "6.1"
+num-complex = "0.4"
+ratatui = "0.28"
+crossterm = "0.28"
+color-eyre = "0.6"
+anyhow = "1.0"
