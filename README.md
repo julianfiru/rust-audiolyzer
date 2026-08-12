@@ -41,12 +41,12 @@ $$w[n] = 0.5 \left( 1 - \cos\left(\frac{2\pi n}{N-1}\right) \right), \quad 0 \le
 
 Supported selectable window functions include Hann, Hamming, and Rectangular (no window).
 
-### 2. Fast Fourier Transform (FFT)
+### 2. Fast Fourier Transform (FFT) & Dynamic Resolution
 The windowed discrete-time sequence is transformed into the frequency domain using the Cooley-Tukey FFT algorithm:
 
 $$X[k] = \sum_{n=0}^{N-1} x[n] w[n] \, e^{-i \frac{2\pi}{N} k n}, \quad 0 \le k < N$$
 
-Where $N = 2048$ sample points, giving a fine frequency resolution of $\Delta f = \frac{f_s}{N} \approx 23.4 \text{ Hz}$ at standard $48 \text{ kHz}$ sampling rates.
+The application supports **Dynamic FFT Size Selection** ($N \in \{512, 1024, 2048, 4096, 8192\}$). This allows live toggling between high time-resolution (small $N$) and high frequency-resolution (large $N$, where $\Delta f = \frac{f_s}{N} \approx 5.8 \text{ Hz}$ at $N=8192$).
 
 ### 3. Logarithmic Frequency Binning & dBFS Scale Conversion
 Human perception of sound frequency is logarithmic. Linear FFT frequency bins are mapped into $K = 48$ logarithmic frequency bands spanning from $20\text{ Hz}$ to $20\text{ kHz}$:
@@ -59,7 +59,14 @@ $$\text{dBFS} = 20 \cdot \log_{10} \left( \frac{|X[k]|}{N} + \epsilon \right) + 
 
 Where $G$ represents user-configured gain offset (dB). The resulting values are normalized within $[-60\text{ dBFS}, 0\text{ dBFS}]$ and clamped to $[0.0, 1.0]$.
 
-### 4. Dynamic Ballistics (Smoothing and Peak Falloff)
+### 4. Real-Time Beat Detection & Tempo (BPM) Analysis
+The DSP engine features a real-time Beat & BPM Detector that monitors energy accumulation in the sub-bass frequency region ($20\text{ Hz} - 100\text{ Hz}$):
+
+$$E_{\text{bass}} = \frac{1}{M} \sum_{k=0}^{M-1} |X[k]|$$
+
+A beat event is registered when the instantaneous energy exceeds the rolling average energy by a specified ratio ($E_{\text{bass}} > 1.5 \cdot \bar{E}_{\text{history}}$) with a 200ms debounce filter. Inter-beat intervals $\Delta t$ are computed to estimate live tempo ($\text{BPM} = \frac{60}{\Delta t}$).
+
+### 5. Dynamic Ballistics (Smoothing and Peak Falloff)
 Bar levels are smoothed using an exponential decay envelope, while peak indicators drop at a linear rate:
 
 $$y_{\text{bar}}[t] = \max(y_{\text{target}}, \, y_{\text{bar}}[t-1] \cdot \alpha_{\text{decay}})$$
@@ -81,11 +88,14 @@ This application builds upon industry-standard Rust libraries:
 
 ---
 
-## Visualization Modes
+## Visualization Modes & Features
 
 1. **Spectrum Analyzer**: Displays 48 ISO logarithmic frequency bands with sub-cell precision and peak cap markers.
 2. **Time-Domain Oscilloscope**: Visualizes continuous raw PCM audio waveforms centered on a zero-crossing reference line.
 3. **Stereo Master VU Meter**: Features dual-channel (Left/Right) RMS and Peak level meters, precise dBFS scale markers, and visual clipping detection indicators.
+4. **2D Waterfall Spectrogram**: A continuous temporal heatmap visualizer showing frequency spectrum evolution over time.
+5. **Interactive Audio Device Selector**: Hot-swap audio input/output sources on the fly via a popup modal without restarting the application.
+6. **Real-Time BPM & Beat Flash**: Monitors kick drum beats and displays current estimated music tempo with visual sidebar flash indicators.
 
 ---
 
@@ -96,6 +106,9 @@ This application builds upon industry-standard Rust libraries:
 | `1` | Switch view to Spectrum Analyzer Mode |
 | `2` | Switch view to Time-Domain Oscilloscope Mode |
 | `3` | Switch view to Stereo VU Meter Mode |
+| `4` | Switch view to 2D Waterfall Spectrogram Mode |
+| `[` / `]` | Decrease / Increase FFT Size (Dynamic Resolution: 512 to 8192) |
+| `D` | Open interactive Audio Device Selector popup modal |
 | `Tab` | Cycle color themes (Cyberpunk, Matrix, Fire, Studio Dark) |
 | `W` | Toggle window function (Hann -> Rectangular -> Hamming) |
 | `S` | Toggle frequency scale mode (Logarithmic vs Linear) |
