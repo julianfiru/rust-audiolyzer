@@ -14,6 +14,7 @@ pub struct StatusBarWidget<'a> {
     scale_mode: &'a str,
     theme: &'a Theme,
     paused: bool,
+    fft_size: usize,
 }
 
 impl<'a> StatusBarWidget<'a> {
@@ -25,6 +26,7 @@ impl<'a> StatusBarWidget<'a> {
         scale_mode: &'a str,
         theme: &'a Theme,
         paused: bool,
+        fft_size: usize,
     ) -> Self {
         Self {
             device_name,
@@ -34,6 +36,7 @@ impl<'a> StatusBarWidget<'a> {
             scale_mode,
             theme,
             paused,
+            fft_size,
         }
     }
 }
@@ -43,12 +46,13 @@ impl<'a> Widget for StatusBarWidget<'a> {
         let pause_status = if self.paused { " [PAUSED] " } else { " [LIVE] " };
 
         let status_text = format!(
-            " Dev: {} | Rate: {}Hz | Gain: {:+.1}dB | Window: {} | Scale: {} | Theme: {} | Status: {} | press 'h' for help",
+            " Dev: {} | Rate: {}Hz | Gain: {:+.1}dB | Window: {} | Scale: {} | FFT: {} | Theme: {} | Status: {} | 'h' for help",
             self.device_name,
             self.sample_rate,
             self.gain_db,
             self.window_type,
             self.scale_mode,
+            self.fft_size,
             self.theme.name,
             pause_status
         );

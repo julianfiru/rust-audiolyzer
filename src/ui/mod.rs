@@ -2,7 +2,7 @@ pub mod components;
 pub mod theme;
 
 use components::{
-    help_modal::HelpModalWidget, spectrum::SpectrumWidget, status_bar::StatusBarWidget,
+    help_modal::HelpModalWidget, spectrogram::SpectrogramWidget, spectrum::SpectrumWidget, status_bar::StatusBarWidget,
     vu_meter::VuMeterWidget, waveform::WaveformWidget,
 };
 use ratatui::{
@@ -33,17 +33,18 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     let scale_str = format!("{:?}", app.dsp_engine.scale_mode());
 
     // --- A. RENDER HEADER WITH MODE TABS & STATUS ---
-    let (tab_1, tab_2, tab_3) = match app.view_mode {
-        ViewMode::Spectrum => (" > [1: SPECTRUM] ", "   [2: WAVEFORM] ", "   [3: VU METER] "),
-        ViewMode::Waveform => ("   [1: SPECTRUM] ", " > [2: WAVEFORM] ", "   [3: VU METER] "),
-        ViewMode::VuMeter =>  ("   [1: SPECTRUM] ", "   [2: WAVEFORM] ", " > [3: VU METER] "),
+    let (tab_1, tab_2, tab_3, tab_4) = match app.view_mode {
+        ViewMode::Spectrum =>    (" > [1] SPEC ", "   [2] WAVE ", "   [3] VU ", "   [4] WATERFALL "),
+        ViewMode::Waveform =>    ("   [1] SPEC ", " > [2] WAVE ", "   [3] VU ", "   [4] WATERFALL "),
+        ViewMode::VuMeter =>     ("   [1] SPEC ", "   [2] WAVE ", " > [3] VU ", "   [4] WATERFALL "),
+        ViewMode::Spectrogram => ("   [1] SPEC ", "   [2] WAVE ", "   [3] VU ", " > [4] WATERFALL "),
     };
 
     let status_badge = if app.paused { " [PAUSED] " } else { " [LIVE] " };
 
     let header_text = format!(
-        "AUDIOLYZER Pro  | {} {} {} | Theme: {} | Status: {}",
-        tab_1, tab_2, tab_3, app.theme.name, status_badge
+        "AUDIOLYZER Pro  | {}{}{}{} | Theme: {} | Status: {}",
+        tab_1, tab_2, tab_3, tab_4, app.theme.name, status_badge
     );
 
     let header_widget = Paragraph::new(header_text)
@@ -96,6 +97,14 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             );
             frame.render_widget(widget, visualizer_area);
         }
+        ViewMode::Spectrogram => {
+            let widget = SpectrogramWidget::new(
+                &app.spectrogram_history,
+                &app.theme,
+                "2D Waterfall Spectrogram",
+            );
+            frame.render_widget(widget, visualizer_area);
+        }
     }
 
     // 2. Side Audio Metrics Dashboard Panel
@@ -108,6 +117,17 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         dev_name.push_str("...");
     }
 
+    let bpm_str = match app.current_bpm {
+        Some(bpm) => format!("{:>3.0} BPM", bpm),
+        None => "Detecting...".to_string(),
+    };
+
+    let beat_hit_str = if app.beat_flash_timer > 0 {
+        "  [BASS HIT!] "
+    } else {
+        "              "
+    };
+
     let sidebar_text = vec![
         format!("Device:"),
         format!(" {}", dev_name),
@@ -118,15 +138,24 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         format!("Peak   : {:>5.1} dBFS", peak_db),
         format!("Rate   : {} Hz", app.audio_stream.sample_rate()),
         format!(""),
+        format!("Tempo  : {}", bpm_str),
+        format!("{}", beat_hit_str),
+        format!(""),
         format!("[H] Help"),
     ].join("\n");
+
+    let mut border_style = Style::default().fg(app.theme.accent);
+    // Flash the border color when a beat hits
+    if app.beat_flash_timer > 0 {
+        border_style = Style::default().fg(ratatui::style::Color::White).add_modifier(Modifier::BOLD);
+    }
 
     let sidebar_widget = Paragraph::new(sidebar_text)
         .block(
             Block::default()
                 .title(" Metrics ")
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(app.theme.accent)),
+                .border_style(border_style),
         )
         .style(Style::default().fg(app.theme.peak_color));
 
@@ -141,6 +170,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         &scale_str,
         &app.theme,
         app.paused,
+        app.fft_size,
     );
     frame.render_widget(status_bar, footer_area);
 
@@ -149,6 +179,13 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         let modal_area = centered_rect(60, 60, frame.area());
         let modal = HelpModalWidget::new(&app.theme);
         frame.render_widget(modal, modal_area);
+    }
+
+    // --- E. RENDER DEVICE SELECTOR MODAL ---
+    if app.show_device_selector {
+        use components::device_selector::DeviceSelectorWidget;
+        let widget = DeviceSelectorWidget::new(&app.available_devices, &app.theme);
+        frame.render_stateful_widget(widget, frame.area(), &mut app.device_list_state);
     }
 }
 

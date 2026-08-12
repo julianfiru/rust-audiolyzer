@@ -13,7 +13,20 @@ pub struct AudioStreamManager {
 impl AudioStreamManager {
     pub fn new(buffer_capacity: usize) -> Result<Self> {
         let (_host, device, supported_config) = super::devices::get_default_loopback_device()?;
-        let device_name = device.name().unwrap_or_else(|_| "Default Output (System Audio)".to_string());
+        Self::build_stream_from_device(device, supported_config, buffer_capacity)
+    }
+
+    pub fn new_with_device(device_name: &str, buffer_capacity: usize) -> Result<Self> {
+        let (_host, device, supported_config) = super::devices::get_device_by_name(device_name)?;
+        Self::build_stream_from_device(device, supported_config, buffer_capacity)
+    }
+
+    fn build_stream_from_device(
+        device: cpal::Device,
+        supported_config: cpal::SupportedStreamConfig,
+        buffer_capacity: usize,
+    ) -> Result<Self> {
+        let device_name = device.name().unwrap_or_else(|_| "Unknown Device".to_string());
         let sample_rate = supported_config.sample_rate().0;
         let _channels = supported_config.channels();
         let sample_format = supported_config.sample_format();

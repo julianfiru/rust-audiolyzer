@@ -1,9 +1,11 @@
 pub mod ballistics;
+pub mod beat_detector;
 pub mod binning;
 pub mod fft;
 pub mod windowing;
 
 use ballistics::BallisticsEngine;
+use beat_detector::BeatDetector;
 use binning::{FrequencyBinner, ScaleMode};
 use fft::FftProcessor;
 use windowing::{WindowFunction, WindowType};
@@ -13,6 +15,7 @@ pub struct DspEngine {
     fft_processor: FftProcessor,
     binner: FrequencyBinner,
     ballistics: BallisticsEngine,
+    beat_detector: BeatDetector,
     windowed_buffer: Vec<f32>,
     raw_bar_targets: Vec<f32>,
     fft_size: usize,
@@ -26,6 +29,7 @@ impl DspEngine {
             fft_processor: FftProcessor::new(fft_size),
             binner: FrequencyBinner::new(sample_rate, fft_size, num_bars, ScaleMode::Logarithmic),
             ballistics: BallisticsEngine::new(num_bars, 0.82, 0.03),
+            beat_detector: BeatDetector::new(),
             windowed_buffer: vec![0.0; fft_size],
             raw_bar_targets: vec![0.0; num_bars],
             fft_size,
@@ -34,7 +38,7 @@ impl DspEngine {
     }
 
     /// Process raw audio PCM samples through the full DSP pipeline
-    pub fn process_samples(&mut self, samples: &[f32], gain_db: f32) -> (&[f32], &[f32]) {
+    pub fn process_samples(&mut self, samples: &[f32], gain_db: f32) -> (&[f32], &[f32], Option<f32>, bool) {
         // 1. Apply Window Function (Hann)
         self.window_fn.apply(samples, &mut self.windowed_buffer);
 
@@ -44,8 +48,13 @@ impl DspEngine {
         // 3. Bin Spectrum into Frequency Bands & Convert to dBFS Scale
         self.binner.compute_bins(complex_spectrum, &mut self.raw_bar_targets, gain_db);
 
-        // 4. Apply Ballistics Decay & Peak Detection
-        self.ballistics.update(&self.raw_bar_targets)
+        // 4. Run Beat Detection (BPM & Beat Hit trigger)
+        let (bpm, is_beat) = self.beat_detector.process(&self.raw_bar_targets);
+
+        // 5. Apply Ballistics Decay & Peak Detection
+        let (bars, peaks) = self.ballistics.update(&self.raw_bar_targets);
+        
+        (bars, peaks, bpm, is_beat)
     }
 
     pub fn toggle_windowing(&mut self) -> WindowType {
