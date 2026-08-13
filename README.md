@@ -73,6 +73,20 @@ $$y_{\text{bar}}[t] = \max(y_{\text{target}}, \, y_{\text{bar}}[t-1] \cdot \alph
 
 $$y_{\text{peak}}[t] = \max(y_{\text{bar}}[t], \, y_{\text{peak}}[t-1] - \beta_{\text{falloff}})$$
 
+### 6. Peak Frequency & Musical Note (Pitch) Detection
+The DSP engine evaluates raw FFT bin magnitudes to locate the dominant peak frequency $f_{\text{peak}}$:
+
+$$f_{\text{peak}} = \arg\max_{k} |X[k]| \cdot \frac{f_s}{N}$$
+
+It automatically translates $f_{\text{peak}}$ into its corresponding musical pitch notation (e.g., A4, C#5) using logarithmic MIDI note mapping:
+
+$$\text{MIDI Note} = \left\lfloor 12 \cdot \log_2\left(\frac{f_{\text{peak}}}{440}\right) + 69.5 \right\rfloor$$
+
+### 7. Audio Quality Estimator (Valley Detection)
+To detect lossy compression (MP3/AAC brickwall filters) vs lossless audio sources (FLAC/WAV/AIFF) in real-time, the engine uses **Valley Detection with Absolute Magnitude Verification**:
+- **Sliding Band Analysis**: Evaluates 500Hz sliding bands between 8 kHz and 22 kHz to detect "valleys" of silence.
+- **Dual-Criteria Verification**: Classifies audio as **Lossy** if a frequency valley drops $>50\text{ dB}$ below low-mid music energy *AND* has an absolute magnitude $< 0.001$ (eliminating false positives caused by natural high-frequency roll-off in lossless tracks).
+
 ---
 
 ## Technology Stack & Technology Citations
@@ -96,6 +110,7 @@ This application builds upon industry-standard Rust libraries:
 4. **2D Waterfall Spectrogram**: A continuous temporal heatmap visualizer showing frequency spectrum evolution over time.
 5. **Interactive Audio Device Selector**: Hot-swap audio input/output sources on the fly via a popup modal without restarting the application.
 6. **Real-Time BPM & Beat Flash**: Monitors kick drum beats and displays current estimated music tempo with visual sidebar flash indicators.
+7. **Dominant Pitch & Quality Estimator**: Displays real-time dominant peak frequency, musical pitch, estimated high-frequency cutoff, and Lossy/Lossless quality status.
 
 ---
 
@@ -110,8 +125,9 @@ This application builds upon industry-standard Rust libraries:
 | `[` / `]` | Decrease / Increase FFT Size (Dynamic Resolution: 512 to 8192) |
 | `D` | Open interactive Audio Device Selector popup modal |
 | `Tab` | Cycle color themes (Cyberpunk, Matrix, Fire, Studio Dark) |
-| `W` | Toggle window function (Hann -> Rectangular -> Hamming) |
+| `W` | Toggle window function (Blackman-Harris -> Hann -> Rectangular -> Hamming) |
 | `S` | Toggle frequency scale mode (Logarithmic vs Linear) |
+| `X` | Dump raw FFT spectrum to `spectrum_debug.csv` for analysis |
 | `Up Arrow` | Increase audio input gain sensitivity (+3.0 dB) |
 | `Down Arrow` | Decrease audio input gain sensitivity (-3.0 dB) |
 | `Space` | Freeze / Pause visualizer rendering |
