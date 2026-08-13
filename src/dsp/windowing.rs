@@ -5,6 +5,7 @@ pub enum WindowType {
     Hann,
     Hamming,
     Rectangular,
+    BlackmanHarris,
 }
 
 pub struct WindowFunction {
@@ -22,6 +23,16 @@ impl WindowFunction {
                 .map(|n| 0.54 - 0.46 * (2.0 * PI * n as f32 / (size - 1) as f32).cos())
                 .collect(),
             WindowType::Rectangular => vec![1.0; size],
+            WindowType::BlackmanHarris => (0..size)
+                .map(|n| {
+                    let a0 = 0.35875;
+                    let a1 = 0.48829;
+                    let a2 = 0.14128;
+                    let a3 = 0.01168;
+                    let p = 2.0 * PI * n as f32 / (size - 1) as f32;
+                    a0 - a1 * p.cos() + a2 * (2.0 * p).cos() - a3 * (3.0 * p).cos()
+                })
+                .collect(),
         };
 
         Self { weights, window_type }

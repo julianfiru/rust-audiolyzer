@@ -1,9 +1,11 @@
+pub mod analytics;
 pub mod ballistics;
 pub mod beat_detector;
 pub mod binning;
 pub mod fft;
 pub mod windowing;
 
+use analytics::AudioAnalytics;
 use ballistics::BallisticsEngine;
 use beat_detector::BeatDetector;
 use binning::{FrequencyBinner, ScaleMode};
@@ -16,52 +18,60 @@ pub struct DspEngine {
     binner: FrequencyBinner,
     ballistics: BallisticsEngine,
     beat_detector: BeatDetector,
+    analytics: AudioAnalytics,
     windowed_buffer: Vec<f32>,
     raw_bar_targets: Vec<f32>,
     fft_size: usize,
+    sample_rate: f32,
     _num_bars: usize,
 }
 
 impl DspEngine {
     pub fn new(sample_rate: f32, fft_size: usize, num_bars: usize) -> Self {
         Self {
-            window_fn: WindowFunction::new(fft_size, WindowType::Hann),
+            window_fn: WindowFunction::new(fft_size, WindowType::BlackmanHarris),
             fft_processor: FftProcessor::new(fft_size),
             binner: FrequencyBinner::new(sample_rate, fft_size, num_bars, ScaleMode::Logarithmic),
             ballistics: BallisticsEngine::new(num_bars, 0.82, 0.03),
             beat_detector: BeatDetector::new(),
+            analytics: AudioAnalytics::new(),
             windowed_buffer: vec![0.0; fft_size],
             raw_bar_targets: vec![0.0; num_bars],
             fft_size,
+            sample_rate,
             _num_bars: num_bars,
         }
     }
 
     /// Process raw audio PCM samples through the full DSP pipeline
-    pub fn process_samples(&mut self, samples: &[f32], gain_db: f32) -> (&[f32], &[f32], Option<f32>, bool) {
+    pub fn process_samples(&mut self, samples: &[f32], gain_db: f32) -> (&[f32], &[f32], Option<f32>, bool, &AudioAnalytics) {
         // 1. Apply Window Function (Hann)
         self.window_fn.apply(samples, &mut self.windowed_buffer);
 
         // 2. Perform Forward FFT
         let complex_spectrum = self.fft_processor.process(&self.windowed_buffer);
 
-        // 3. Bin Spectrum into Frequency Bands & Convert to dBFS Scale
+        // 3. Run Audio Analytics (Peak Freq & Quality Estimation)
+        self.analytics.process(complex_spectrum, self.sample_rate, self.fft_size);
+
+        // 4. Bin Spectrum into Frequency Bands & Convert to dBFS Scale
         self.binner.compute_bins(complex_spectrum, &mut self.raw_bar_targets, gain_db);
 
-        // 4. Run Beat Detection (BPM & Beat Hit trigger)
+        // 5. Run Beat Detection (BPM & Beat Hit trigger)
         let (bpm, is_beat) = self.beat_detector.process(&self.raw_bar_targets);
 
-        // 5. Apply Ballistics Decay & Peak Detection
+        // 6. Apply Ballistics Decay & Peak Detection
         let (bars, peaks) = self.ballistics.update(&self.raw_bar_targets);
         
-        (bars, peaks, bpm, is_beat)
+        (bars, peaks, bpm, is_beat, &self.analytics)
     }
 
     pub fn toggle_windowing(&mut self) -> WindowType {
         let next_type = match self.window_fn.window_type() {
+            WindowType::BlackmanHarris => WindowType::Hann,
             WindowType::Hann => WindowType::Rectangular,
             WindowType::Rectangular => WindowType::Hamming,
-            WindowType::Hamming => WindowType::Hann,
+            WindowType::Hamming => WindowType::BlackmanHarris,
         };
         self.window_fn = WindowFunction::new(self.fft_size, next_type);
         next_type
@@ -87,5 +97,12 @@ impl DspEngine {
     #[allow(dead_code)]
     pub fn num_bars(&self) -> usize {
         self._num_bars
+    }
+
+    /// Dump the current FFT spectrum to a CSV file for debugging
+    pub fn dump_spectrum(&mut self, samples: &[f32]) {
+        self.window_fn.apply(samples, &mut self.windowed_buffer);
+        let complex_spectrum = self.fft_processor.process(&self.windowed_buffer);
+        AudioAnalytics::dump_spectrum_csv(complex_spectrum, self.sample_rate, self.fft_size);
     }
 }

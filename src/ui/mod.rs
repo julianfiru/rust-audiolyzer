@@ -128,6 +128,19 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         "              "
     };
 
+    let peak_hz_str = if app.analytics.peak_hz > 0.0 {
+        format!("{:.1} Hz [{}]", app.analytics.peak_hz, app.analytics.note_name)
+    } else {
+        "--- Hz".to_string()
+    };
+
+    let (cutoff_str, quality_str) = if let Some(cutoff) = app.analytics.cutoff_hz {
+        let q = if app.analytics.is_lossy { "Lossy" } else { "Lossless" };
+        (format!("{:.1} kHz", cutoff / 1000.0), q)
+    } else {
+        ("--- kHz".to_string(), "Unknown")
+    };
+
     let sidebar_text = vec![
         format!("Device:"),
         format!(" {}", dev_name),
@@ -141,7 +154,12 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         format!("Tempo  : {}", bpm_str),
         format!("{}", beat_hit_str),
         format!(""),
-        format!("[H] Help"),
+        format!("Dom.Hz : {}", peak_hz_str),
+        format!("Cutoff : {}", cutoff_str),
+        format!("Quality: {}", quality_str),
+        format!("DBG: {}", app.analytics.debug_info),
+        format!(""),
+        format!("[H] Help [X] Dump"),
     ].join("\n");
 
     let mut border_style = Style::default().fg(app.theme.accent);

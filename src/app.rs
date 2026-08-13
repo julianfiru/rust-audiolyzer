@@ -16,6 +16,8 @@ pub enum ViewMode {
     Spectrogram,
 }
 
+use crate::dsp::analytics::AudioAnalytics;
+
 pub struct App {
     pub running: bool,
     pub paused: bool,
@@ -35,6 +37,7 @@ pub struct App {
     pub fft_size: usize,
     pub current_bpm: Option<f32>,
     pub beat_flash_timer: u8,
+    pub analytics: AudioAnalytics,
 }
 
 impl App {
@@ -77,6 +80,7 @@ impl App {
             fft_size,
             current_bpm: None,
             beat_flash_timer: 0,
+            analytics: AudioAnalytics::new(),
         })
     }
 
@@ -93,13 +97,14 @@ impl App {
         if self.audio_stream.available_samples() >= self.fft_size {
             self.audio_stream.pop_samples(&mut self.audio_time_domain_buffer);
 
-            // Execute DSP pipeline (Hann windowing -> FFT -> Log binning -> Ballistics -> Beat)
-            let (bars, peaks, bpm, is_beat) = self
+            // Execute DSP pipeline (Hann windowing -> FFT -> Analytics -> Log binning -> Ballistics -> Beat)
+            let (bars, peaks, bpm, is_beat, analytics) = self
                 .dsp_engine
                 .process_samples(&self.audio_time_domain_buffer, self.gain_db);
 
             self.bar_values.copy_from_slice(bars);
             self.peak_values.copy_from_slice(peaks);
+            self.analytics = analytics.clone();
             
             if is_beat {
                 self.beat_flash_timer = 5; // Flash for 5 frames
@@ -191,6 +196,10 @@ impl App {
             }
             KeyCode::Char('s') => {
                 self.dsp_engine.toggle_scale_mode();
+            }
+            KeyCode::Char('x') => {
+                // Debug: dump raw FFT spectrum to CSV
+                self.dsp_engine.dump_spectrum(&self.audio_time_domain_buffer);
             }
             KeyCode::Up => self.gain_db = (self.gain_db + 3.0).min(24.0),
             KeyCode::Down => self.gain_db = (self.gain_db - 3.0).max(-24.0),
