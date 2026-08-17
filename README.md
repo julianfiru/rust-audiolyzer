@@ -6,6 +6,8 @@
 
 Audiolyzer Pro is a high-performance, low-latency audio visualization engine and interactive terminal application implemented in Rust. Designed for systems programmers, audio engineers, and power users, it captures live system output audio in real-time, performs Discrete Fourier Transforms (DFT), and renders frequency spectrums, oscilloscopes, and VU meters inside the terminal at a constant 60 Frames Per Second (FPS).
 
+![Audiolyzer Pro Spectrum Analyzer](doc/spectrum.png)
+
 ---
 
 ## Technical Highlights & Architecture
@@ -104,13 +106,30 @@ This application builds upon industry-standard Rust libraries:
 
 ## Visualization Modes & Features
 
-1. **Spectrum Analyzer**: Displays 48 ISO logarithmic frequency bands with sub-cell precision and peak cap markers.
-2. **Time-Domain Oscilloscope**: Visualizes continuous raw PCM audio waveforms centered on a zero-crossing reference line.
-3. **Stereo Master VU Meter**: Features dual-channel (Left/Right) RMS and Peak level meters, precise dBFS scale markers, and visual clipping detection indicators.
-4. **2D Waterfall Spectrogram**: A continuous temporal heatmap visualizer showing frequency spectrum evolution over time.
-5. **Interactive Audio Device Selector**: Hot-swap audio input/output sources on the fly via a popup modal without restarting the application.
-6. **Real-Time BPM & Beat Flash**: Monitors kick drum beats and displays current estimated music tempo with visual sidebar flash indicators.
-7. **Dominant Pitch & Quality Estimator**: Displays real-time dominant peak frequency, musical pitch, estimated high-frequency cutoff, and Lossy/Lossless quality status.
+### 1. Spectrum Analyzer (Mode `1`)
+Displays 48 ISO logarithmic frequency bands with sub-cell precision (8x vertical resolution), peak cap indicators, and real-time side metrics dashboard.
+
+![Spectrum Analyzer](doc/spectrum.png)
+
+### 2. Time-Domain Oscilloscope (Mode `2`)
+Visualizes continuous raw Float32 PCM audio waveforms centered on a zero-crossing reference line to inspect transient characteristics.
+
+![Time-Domain Oscilloscope](doc/waveform.png)
+
+### 3. Stereo Master VU Meter (Mode `3`)
+Features dual-channel (Left / Right) RMS and Peak level meters with precise dBFS scale markers and visual clipping detection indicators.
+
+![Stereo Master VU Meter](doc/vu_meter.png)
+
+### 4. 2D Waterfall Spectrogram (Mode `4`)
+A continuous temporal heatmap visualizer showing frequency spectrum evolution over time across a rolling history buffer.
+
+![2D Waterfall Spectrogram](doc/spectrogram.png)
+
+### Additional Features
+- **Interactive Audio Device Selector (`D`)**: Hot-swap audio input/output sources on the fly via a popup modal without restarting the application.
+- **Real-Time BPM & Beat Flash**: Monitors kick drum beats and displays current estimated music tempo with visual sidebar flash indicators.
+- **Dominant Pitch & Quality Estimator**: Displays real-time dominant peak frequency, musical pitch notation, estimated cutoff frequency, and Lossy/Lossless quality analysis.
 
 ---
 
